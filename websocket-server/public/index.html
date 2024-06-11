@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Attendance Records</title>
+    <title>Bản ghi điểm danh</title>
 </head>
 <body>
-    <h1>Attendance Records</h1>
+    <h1>Bản ghi điểm danh</h1>
     <table border="1">
         <tr>
             <th>ID</th>
-            <th>Student ID</th>
-            <th>Timestamp</th>
+            <th>Mã sinh viên</th>
+            <th>Thời gian</th>
         </tr>
         <tbody id="dataTable">
         </tbody>
@@ -45,7 +45,7 @@
             var cell1 = row.insertCell(0);
             var cell2 = row.insertCell(1);
             var cell3 = row.insertCell(2);
-            cell1.innerHTML = table.rows.length; // auto-increment ID
+            cell1.innerHTML = table.rows.length;
             cell2.innerHTML = event.data;
             cell3.innerHTML = new Date().toLocaleString();
         };
