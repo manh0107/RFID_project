@@ -2,37 +2,51 @@
 #include <WebSocketsClient.h>
 #include <MFRC522.h>
 #include <SPI.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
+#include <TimeLib.h>
+#include <LinkedList.h>
 
-// Thông tin mạng WiFi
+// WiFi Credentials
 const char* ssid = "MinhDuc";
 const char* password = "tett2020";
 
-// Địa chỉ IP và cổng của WebSocket server
-const char* ws_server = "192.168.2.74"; // Thay thế bằng địa chỉ IP đúng của server WebSocket
-const uint16_t ws_port = 8080;          // Cổng của server WebSocket
+// WebSocket Server Details
+const char* ws_server = "192.168.2.74";
+const uint16_t ws_port = 8080;
 
-// Các chân kết nối RFID
+// RFID Pins
 #define SS_PIN 21
 #define RST_PIN 22
 
-// Chân LED
+// LED Pins
 const int redPin = 25;
 const int greenPin = 26;
 
-// Khai báo biến và đối tượng
+// NTP Client Setup
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 7*3600, 60000);
+
+// RFID and WebSocket Objects
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 MFRC522::MIFARE_Key key;
 WebSocketsClient webSocket;
 
-// Hàm kết nối tới WebSocket server
+struct CardInfo {
+  byte uid[4];
+  unsigned long lastScanTime;
+  bool isTimeIn;
+};
+
+LinkedList<CardInfo*> cards;
+const unsigned long SCAN_INTERVAL = 1 * 1 * 60; // 12 hours
+
 void connectWebSocket() {
   webSocket.begin(ws_server, ws_port, "/");
-
   webSocket.onEvent(webSocketEvent);
-  webSocket.setReconnectInterval(5000); // Thời gian thử lại kết nối sau 5 giây
+  webSocket.setReconnectInterval(5000);
 }
 
-// Hàm xử lý sự kiện WebSocket
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
@@ -51,53 +65,82 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
 }
 
 void setup() {
-  // Khởi động Serial
   Serial.begin(115200);
-
-  // Khởi động kết nối WiFi
+  
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
-    Serial.println("Đang kết nối với WiFi...");
+    Serial.println("Connecting to WiFi...");
   }
-  Serial.print("Đã kết nối với WiFi. Địa chỉ IP của ESP32: ");
+  Serial.print("WiFi connected. ESP32 IP address: ");
   Serial.println(WiFi.localIP());
 
-  // Khởi động SPI và RFID
   SPI.begin();
   mfrc522.PCD_Init();
 
-  // Thiết lập các chân LED
   pinMode(redPin, OUTPUT);
   pinMode(greenPin, OUTPUT);
 
-  // Kết nối tới WebSocket server
   connectWebSocket();
-  Serial.println("Máy chủ WebSocket đã khởi động");
+  Serial.println("WebSocket server started");
+
+  timeClient.begin();
 }
 
 void loop() {
   webSocket.loop();
+  timeClient.update();
 
-  // Đọc thẻ RFID
   if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
-    readingData();
+    unsigned long currentTime = timeClient.getEpochTime();
+    byte* uid = mfrc522.uid.uidByte;
+
+    if (isCardAllowedToScan(uid, currentTime)) {
+      readingData();
+      updateCardLastScanTime(uid, currentTime);
+    } else {
+      Serial.println("Card scan interval limit. Try again later.");
+      digitalWrite(redPin, HIGH);
+      delay(1000);
+      digitalWrite(redPin, LOW);
+    }
+
     mfrc522.PICC_HaltA();
-    delay(1000); // Thêm một khoảng delay để ổn định quá trình đọc
-    mfrc522.PCD_StopCrypto1(); // Dừng quá trình mã hóa
+    delay(1000);
+    mfrc522.PCD_StopCrypto1();
+  }
+}
+
+bool isCardAllowedToScan(byte *uid, unsigned long currentTime) {
+  for (int i = 0; i < cards.size(); i++) {
+    if (memcmp(cards.get(i)->uid, uid, 4) == 0) {
+      if (currentTime - cards.get(i)->lastScanTime < SCAN_INTERVAL && cards.get(i)->isTimeIn) {
+        return true;
+      }
+      if (currentTime - cards.get(i)->lastScanTime < SCAN_INTERVAL && !cards.get(i)->isTimeIn) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+void updateCardLastScanTime(byte *uid, unsigned long currentTime) {
+  for (int i = 0; i < cards.size(); i++) {
+    if (memcmp(cards.get(i)->uid, uid, 4) == 0) {
+      cards.get(i)->lastScanTime = currentTime;
+      cards.get(i)->isTimeIn = !cards.get(i)->isTimeIn;
+      sendDataToWebSocket(uid, cards.get(i)->isTimeIn ? "time_in" : "time_out");
+      return;
+    }
   }
 
-  // Kiểm tra và thực hiện ghi dữ liệu nếu có yêu cầu từ Serial
-  if (Serial.available()) {
-    int op = Serial.parseInt();
-    if (op == 1) {
-      writingData();
-    }
-    // Clear any remaining input
-    while (Serial.available()) {
-      if (Serial.read() == '\n') break;
-    }
-  }
+  CardInfo* newCard = new CardInfo;
+  memcpy(newCard->uid, uid, 4);
+  newCard->lastScanTime = currentTime;
+  newCard->isTimeIn = true;
+  cards.add(newCard);
+  sendDataToWebSocket(uid, "time_in");
 }
 
 void readingData() {
@@ -107,14 +150,13 @@ void readingData() {
   byte block = 1;
   byte size = 18;
 
-  // Use the default key (usually 0xFFFFFFFFFFFF)
   for (byte i = 0; i < 6; i++) {
     key.keyByte[i] = 0xFF;
   }
 
   MFRC522::StatusCode status = mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &key, &(mfrc522.uid));
   if (status != MFRC522::STATUS_OK) {
-    Serial.print(F("Xác thực thất bại: "));
+    Serial.print(F("Authentication failed: "));
     Serial.println(mfrc522.GetStatusCodeName(status));
     digitalWrite(redPin, HIGH);
     delay(1000);
@@ -124,7 +166,7 @@ void readingData() {
 
   status = mfrc522.MIFARE_Read(block, buffer, &size);
   if (status != MFRC522::STATUS_OK) {
-    Serial.print(F("Đọc thất bại: "));
+    Serial.print(F("Reading failed: "));
     Serial.println(mfrc522.GetStatusCodeName(status));
     digitalWrite(redPin, HIGH);
     delay(1000);
@@ -136,7 +178,7 @@ void readingData() {
     digitalWrite(greenPin, LOW);
   }
 
-  Serial.print(F("\nDữ liệu từ khối ["));
+  Serial.print(F("\nData from block ["));
   Serial.print(block);
   Serial.print(F("]: "));
 
@@ -152,39 +194,21 @@ void readingData() {
   webSocket.sendTXT(dataStr);
 }
 
-void writingData() {
-  mfrc522.PICC_DumpDetailsToSerial(&(mfrc522.uid));
+String getFormattedTime(unsigned long epochTime) {
+  setTime(epochTime);
+  char buffer[20];
+  sprintf(buffer, "%02d-%02d-%04d %02d:%02d:%02d", day(), month(), year(), hour(), minute(), second());
+  return String(buffer);
+}
 
-  Serial.setTimeout(30000L);
-  Serial.println(F("Nhập dữ liệu cần ghi với ký tự '#' ở cuối \n[tối đa 16 ký tự]:"));
-
-  byte buffer[16] = "";
-  byte block = 1;
-  byte dataSize;
-
-  dataSize = Serial.readBytesUntil('#', (char*)buffer, 16);
-  for (byte i = dataSize; i < 16; i++) {
-    buffer[i] = ' ';
+void sendDataToWebSocket(byte *uid, String type) {
+  String uidStr = "";
+  for (int i = 0; i < 4; i++) {
+    uidStr += String(uid[i], HEX);
   }
-
-  String str = (char*)buffer;
-  Serial.println(str);
-
-  webSocket.sendTXT(str);
-
-  MFRC522::StatusCode status = mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &key, &(mfrc522.uid));
-  if (status != MFRC522::STATUS_OK) {
-    Serial.print(F("PCD_Authenticate() thất bại: "));
-    Serial.println(mfrc522.GetStatusCodeName(status));
-    return;
-  }
-
-  status = mfrc522.MIFARE_Write(block, buffer, 16);
-  if (status != MFRC522::STATUS_OK) {
-    Serial.print(F("MIFARE_Write() thất bại: "));
-    Serial.println(mfrc522.GetStatusCodeName(status));
-    return;
-  }
-
-  Serial.println(F("Ghi dữ liệu thành công"));
+  String currentTimeStr = getFormattedTime(timeClient.getEpochTime());
+  String message = uidStr + ";" + type + ";" + currentTimeStr;
+  Serial.print("Sending data to WebSocket: ");
+  Serial.println(message);
+  webSocket.sendTXT(message);
 }

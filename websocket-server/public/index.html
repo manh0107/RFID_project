@@ -1,61 +1,126 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Bản ghi điểm danh</title>
+    <title>Hệ thống điểm danh sinh viên</title>
+    <link rel="stylesheet" type="text/css" href="styles.css">
 </head>
 <body>
-    <h1>Bản ghi điểm danh</h1>
-    <table border="1">
-        <tr>
-            <th>ID</th>
-            <th>Mã sinh viên</th>
-            <th>Thời gian</th>
-        </tr>
-        <tbody id="dataTable">
-        </tbody>
-    </table>
+    <div class="container">
+        <h1>Hệ thống điểm danh sinh viên</h1>
+        <table id="dataTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Mã sinh viên</th>
+                    <th>Họ và tên</th>
+                    <th>Lớp</th>
+                    <th>Khóa</th>
+                    <th>Ngày điểm danh</th>
+                    <th>Thời gian vào</th>
+                    <th>Thời gian ra</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+
+        <p id="statusMessage"></p>
+    </div>
 
     <script>
-        // Fetch initial data from the server
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0'); // Tháng bắt đầu từ 0
+            const year = String(date.getFullYear()); // Lấy 2 số cuối của năm
+            return `${day}-${month}-${year}`;
+        }
+
+        function addRow(record) {
+            const table = document.getElementById("dataTable").getElementsByTagName('tbody')[0];
+            const row = table.insertRow(0);
+            row.dataset.recordId = record.id;
+            const cell1 = row.insertCell(0);
+            const cell2 = row.insertCell(1);
+            const cell3 = row.insertCell(2);
+            const cell4 = row.insertCell(3);
+            const cell5 = row.insertCell(4);
+            const cell6 = row.insertCell(5);
+            const cell7 = row.insertCell(6);
+            const cell8 = row.insertCell(7);
+            cell1.innerHTML = record.id;
+            cell2.innerHTML = record.student_id;
+            cell3.innerHTML = record.full_name || '';
+            cell4.innerHTML = record.class || '';
+            cell5.innerHTML = record.course || '';
+
+            // Chuyển đổi ngày
+            cell6.innerHTML = formatDate(record.date_attend);
+
+            // Thời gian vào
+            cell7.innerHTML = record.time_in;
+
+            // Thời gian ra
+            cell8.innerHTML = record.time_out;
+
+            while (table.rows.length > 10) {
+                table.deleteRow(10);
+            }
+        }
+
+        function updateRow(record) {
+            const rows = document.getElementById("dataTable").getElementsByTagName('tbody')[0].rows;
+            for (let i = 0; i < rows.length; i++) {
+                if (rows[i].dataset.recordId == record.id) {
+                    rows[i].cells[5].innerHTML = formatDate(record.date_attend);
+                    rows[i].cells[6].innerHTML = record.time_in;
+                    rows[i].cells[7].innerHTML = record.time_out;
+                    break;
+                }
+            }
+        }
+
         fetch('/api/attendance_records')
             .then(response => response.json())
             .then(data => {
-                const table = document.getElementById("dataTable");
-                data.forEach(record => {
-                    const row = table.insertRow(-1);
-                    const cell1 = row.insertCell(0);
-                    const cell2 = row.insertCell(1);
-                    const cell3 = row.insertCell(2);
-                    cell1.innerHTML = record.id;
-                    cell2.innerHTML = record.student_id;
-                    cell3.innerHTML = new Date(record.timestamp).toLocaleString();
+                console.log('Data from API:', data); // Thêm dòng này để kiểm tra dữ liệu
+                data.slice(-10).forEach((record, index) => {
+                    addRow(record);
                 });
-            });
+            })
+            .catch(error => console.error('Error fetching attendance records:', error));
 
         var ws = new WebSocket('ws://192.168.2.74:8080/');
 
         ws.onopen = function() {
-            console.log("WebSocket connected");
+            console.log("WebSocket kết nối");
+            document.getElementById("statusMessage").textContent = "WebSocket kết nối";
         };
 
         ws.onmessage = function(event) {
-            console.log("Received text: " + event.data);
-            var table = document.getElementById("dataTable");
-            var row = table.insertRow(-1);
-            var cell1 = row.insertCell(0);
-            var cell2 = row.insertCell(1);
-            var cell3 = row.insertCell(2);
-            cell1.innerHTML = table.rows.length;
-            cell2.innerHTML = event.data;
-            cell3.innerHTML = new Date().toLocaleString();
+            console.log("Nhận được tin nhắn: " + event.data);
+            try {
+                const record = JSON.parse(event.data);
+                const existingRow = document.querySelector(`[data-record-id='${record.id}']`);
+                if (existingRow) {
+                    updateRow(record);
+                } else {
+                    addRow(record);
+                }
+                document.getElementById("statusMessage").textContent = "Đã quét thẻ thành công";
+            } catch (e) {
+                console.error('Error parsing WebSocket message:', e);
+            }
         };
 
         ws.onclose = function() {
-            console.log("WebSocket disconnected");
+            console.log("WebSocket bị ngắt kết nối");
+            document.getElementById("statusMessage").textContent = "WebSocket bị ngắt kết nối";
         };
 
         ws.onerror = function(error) {
-            console.log("WebSocket error: " + error);
+            console.log("Lỗi WebSocket: " + error);
+            document.getElementById("statusMessage").textContent = "Lỗi WebSocket: " + error;
         };
     </script>
 </body>
