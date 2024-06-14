@@ -14,8 +14,10 @@
                     <th>ID</th>
                     <th>Mã sinh viên</th>
                     <th>Họ và tên</th>
+                    <th>Tuổi</th>
                     <th>Lớp</th>
                     <th>Khóa</th>
+                    <th>Giới tính</th>
                     <th>Ngày điểm danh</th>
                     <th>Thời gian vào</th>
                     <th>Thời gian ra</th>
@@ -71,12 +73,14 @@
                             row.insertCell(0).innerText = record.id;
                             row.insertCell(1).innerText = record.student_id;
                             row.insertCell(2).innerText = record.full_name;
-                            row.insertCell(3).innerText = record.class;
-                            row.insertCell(4).innerText = record.course;
-                            row.insertCell(5).innerText = record.date_attend;
-                            row.insertCell(6).innerText = record.time_in;
-                            row.insertCell(7).innerText = record.time_out;
-                            const actionsCell = row.insertCell(8);
+                            row.insertCell(3).innerText = record.age;
+                            row.insertCell(4).innerText = record.class;
+                            row.insertCell(5).innerText = record.course;
+                            row.insertCell(6).innerText = record.gender;
+                            row.insertCell(7).innerText = record.date_attend;
+                            row.insertCell(8).innerText = record.time_in;
+                            row.insertCell(9).innerText = record.time_out;
+                            const actionsCell = row.insertCell(10);
                             const editButton = document.createElement("button");
                             editButton.innerText = "Chỉnh sửa";
                             editButton.onclick = function() {
@@ -98,17 +102,23 @@
             };
 
             socket.onmessage = function(event) {
-                const updatedRecord = JSON.parse(event.data);
-                const rows = dataTable.getElementsByTagName('tr');
-                for (let i = 0; i < rows.length; i++) {
-                    if (rows[i].cells[1].innerText == updatedRecord.student_id) {
-                        rows[i].cells[2].innerText = updatedRecord.full_name;
-                        rows[i].cells[3].innerText = updatedRecord.class;
-                        rows[i].cells[4].innerText = updatedRecord.course;
-                        rows[i].cells[5].innerText = updatedRecord.date_attend;
-                        rows[i].cells[6].innerText = updatedRecord.time_in;
-                        rows[i].cells[7].innerText = updatedRecord.time_out;
+                try {
+                    const updatedRecord = JSON.parse(event.data);
+                    const rows = dataTable.getElementsByTagName('tr');
+                    for (let i = 0; i < rows.length; i++) {
+                        if (rows[i].cells[1].innerText == updatedRecord.student_id) {
+                            rows[i].cells[2].innerText = updatedRecord.full_name;
+                            rows[i].cells[3].innerText = updatedRecord.age;
+                            rows[i].cells[4].innerText = updatedRecord.class;
+                            rows[i].cells[5].innerText = updatedRecord.course;
+                            rows[i].cells[6].innerText = updatedRecord.gender;
+                            rows[i].cells[7].innerText = updatedRecord.date_attend;
+                            rows[i].cells[8].innerText = updatedRecord.time_in;
+                            rows[i].cells[9].innerText = updatedRecord.time_out;
+                        }
                     }
+                } catch (error) {
+                    console.error('Error parsing WebSocket message as JSON: ', error);
                 }
             };
 

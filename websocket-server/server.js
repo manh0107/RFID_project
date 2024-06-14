@@ -3,9 +3,12 @@ const path = require('path');
 const WebSocket = require('ws');
 const mysql = require('mysql');
 const os = require('os');
+const bodyParser = require('body-parser');
 
 const app = express();
 const port = 8080;
+
+app.use(bodyParser.json());
 
 const db = mysql.createConnection({
   host: 'localhost',
@@ -36,6 +39,40 @@ app.get('/api/attendance_records', (req, res) => {
   });
 });
 
+app.put('/api/update_record/:id', (req, res) => {
+  const id = req.params.id;
+  const { student_id, full_name, age, class: studentClass, course, gender } = req.body;
+  const updateQuery = `
+    UPDATE attendance_records 
+    SET student_id = ?, full_name = ?, age = ?, class = ?, course = ?, gender = ?
+    WHERE id = ?
+  `;
+  db.query(updateQuery, [student_id, full_name, age, studentClass, course, gender, id], (err, result) => {
+    if (err) {
+      console.error('Failed to update record: ', err);
+      res.status(500).send('Failed to update record');
+    } else {
+      const updatedRecord = {
+        id,
+        student_id,
+        full_name,
+        age,
+        class: studentClass,
+        course,
+        gender
+      };
+      res.json(updatedRecord);
+
+      // Send updated record to all clients
+      wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(updatedRecord));
+        }
+      });
+    }
+  });
+});
+
 const server = app.listen(port, () => {
   console.log(`HTTP server running on port ${port}`);
   const networkInterfaces = os.networkInterfaces();
@@ -56,11 +93,24 @@ wss.on('connection', ws => {
   ws.on('message', message => {
     const messageStr = message.toString();
     console.log('Received: %s', messageStr);
-    const parts = messageStr.split(";");
 
+    if (messageStr === 'request_data') {
+      const query = 'SELECT * FROM attendance_records';
+      db.query(query, (err, results) => {
+        if (err) {
+          console.error('Failed to retrieve data: ', err);
+          ws.send(JSON.stringify({ error: 'Failed to retrieve data' }));
+        } else {
+          ws.send(JSON.stringify(results));
+        }
+      });
+      return;
+    }
+
+    const parts = messageStr.split(";");
     if (parts.length !== 3) {
       console.log(`Invalid message format: ${messageStr}`);
-      ws.send(`Invalid message format`);
+      ws.send(JSON.stringify({ error: 'Invalid message format' }));
       return;
     }
 
@@ -69,29 +119,28 @@ wss.on('connection', ws => {
 
     if (!datePart || !timePart) {
       console.log(`Invalid date/time format: ${formattedTime}`);
-      ws.send(`Invalid date/time format`);
+      ws.send(JSON.stringify({ error: 'Invalid date/time format' }));
       return;
     }
 
     const [day, month, year] = datePart.split("-");
-    const dateAttend = `${year}-${month}-${day}`; // Định dạng YYYY-MM-DD
-    const timeAttend = timePart; // HH:mm:ss
+    const dateAttend = `${year}-${month}-${day}`;
+    const timeAttend = timePart;
 
-    const fullName = 'Null'; // Replace with actual value or logic to get full name
-    const studentClass = 'Null'; // Replace with actual value or logic to get class
-    const course = 'Null'; // Replace with actual value or logic to get course
+    const fullName = 'Null';
+    const studentClass = 'Null';
+    const course = 'Null';
 
     if (scanType === 'time_in') {
       const insertQuery = `INSERT INTO attendance_records (student_id, full_name, class, course, date_attend, time_in, time_out) VALUES (?, ?, ?, ?, ?, ?, '00:00:00')`;
       db.query(insertQuery, [studentID, fullName, studentClass, course, dateAttend, timeAttend], (err, result) => {
         if (err) {
           console.error(`Error inserting time_in: `, err);
-          ws.send(`Error inserting time_in`);
+          ws.send(JSON.stringify({ error: 'Error inserting time_in' }));
         } else {
           console.log(`time_in recorded: ${timeAttend}`);
-          ws.send(`time_in recorded: ${timeAttend}`);
+          ws.send(JSON.stringify({ message: `time_in recorded: ${timeAttend}` }));
 
-          // Broadcast new record to all connected clients
           const newRecord = {
             id: result.insertId,
             student_id: studentID,
@@ -111,33 +160,29 @@ wss.on('connection', ws => {
       });
     } else if (scanType === 'time_out') {
       console.log(`Searching for time_out record: student_id=${studentID}, date_attend=${dateAttend}, time_out='00:00:00'`);
-      
-      // Truy vấn bản ghi mới nhất chưa có time_out cho studentID này
       const selectQuery = `
         SELECT * FROM attendance_records 
         WHERE student_id = ? AND time_out = '00:00:00'
-          AND DATE(date_attend) = CURDATE() -- Lọc theo ngày hiện tại 
+          AND DATE(date_attend) = CURDATE()
         ORDER BY time_in DESC 
         LIMIT 1`;
-      
       db.query(selectQuery, [studentID], (err, results) => {
         if (err) {
           console.error(`Error querying for time_out: `, err);
-          ws.send(`Error querying for time_out`);
+          ws.send(JSON.stringify({ error: 'Error querying for time_out' }));
         } else if (results.length === 0) {
           console.log(`No matching record found for time_out: student_id=${studentID}`);
-          ws.send(`No matching record found for time_out: student_id=${studentID}`);
+          ws.send(JSON.stringify({ error: `No matching record found for time_out: student_id=${studentID}` }));
         } else {
           const updateQuery = `UPDATE attendance_records SET time_out = ? WHERE id = ?`;
           db.query(updateQuery, [timeAttend, results[0].id], err => {
             if (err) {
               console.error(`Error updating time_out: `, err);
-              ws.send(`Error updating time_out`);
+              ws.send(JSON.stringify({ error: 'Error updating time_out' }));
             } else {
               console.log(`time_out recorded: ${timeAttend}`);
-              ws.send(`time_out recorded: ${timeAttend}`);
+              ws.send(JSON.stringify({ message: `time_out recorded: ${timeAttend}` }));
 
-              // Broadcast updated record to all connected clients
               const updatedRecord = {
                 id: results[0].id,
                 student_id: studentID,
@@ -159,7 +204,7 @@ wss.on('connection', ws => {
       });
     } else {
       console.log(`Invalid scanType: ${scanType}`);
-      ws.send(`Invalid scanType`);
+      ws.send(JSON.stringify({ error: 'Invalid scanType' }));
     }
   });
 

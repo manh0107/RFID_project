@@ -39,24 +39,30 @@ struct CardInfo {
 };
 
 LinkedList<CardInfo*> cards;
-const unsigned long SCAN_INTERVAL = 1 * 1 * 60; // 12 hours
+const unsigned long SCAN_INTERVAL = 12 * 60 * 60; // 12 hours
+
+bool isWritingData = false; // Variable to check if data is being written to the card
+String dataToWrite = ""; // Data to be written to the card
 
 void connectWebSocket() {
   webSocket.begin(ws_server, ws_port, "/");
   webSocket.onEvent(webSocketEvent);
-  webSocket.setReconnectInterval(5000);
+  webSocket.setReconnectInterval(5000); // Reconnect every 5 seconds
 }
 
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
-      Serial.println("WebSocket disconnected");
+      Serial.println("WebSocket disconnected, trying to reconnect...");
+      webSocket.begin(ws_server, ws_port, "/");
       break;
     case WStype_CONNECTED:
       Serial.println("WebSocket connected");
       break;
     case WStype_TEXT:
       Serial.printf("Received text: %s\n", payload);
+      dataToWrite = String((char*)payload); // Store received data
+      isWritingData = true; // Start the process to write data to the card
       break;
     case WStype_BIN:
       Serial.printf("Received binary data\n");
@@ -88,8 +94,26 @@ void setup() {
 }
 
 void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi connection lost. Reconnecting...");
+    WiFi.reconnect();
+    delay(1000);
+    return;
+  }
+
   webSocket.loop();
   timeClient.update();
+
+  if (isWritingData) {
+    if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+      writeDataToCard();
+      isWritingData = false; // Finish writing data to the card
+      mfrc522.PICC_HaltA();
+      delay(1000);
+      mfrc522.PCD_StopCrypto1();
+    }
+    return;
+  }
 
   if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
     unsigned long currentTime = timeClient.getEpochTime();
@@ -154,7 +178,14 @@ void readingData() {
     key.keyByte[i] = 0xFF;
   }
 
-  MFRC522::StatusCode status = mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &key, &(mfrc522.uid));
+  MFRC522::StatusCode status;
+  for (int i = 0; i < 5; i++) { // Try 5 times
+    status = mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &key, &(mfrc522.uid));
+    if (status == MFRC522::STATUS_OK) {
+        break;
+    }
+    delay(500); // Increase delay between attempts
+  }
   if (status != MFRC522::STATUS_OK) {
     Serial.print(F("Authentication failed: "));
     Serial.println(mfrc522.GetStatusCodeName(status));
@@ -211,4 +242,46 @@ void sendDataToWebSocket(byte *uid, String type) {
   Serial.print("Sending data to WebSocket: ");
   Serial.println(message);
   webSocket.sendTXT(message);
+}
+
+void writeDataToCard() {
+  byte block = 1;
+  byte buffer[18];
+  dataToWrite.getBytes(buffer, sizeof(buffer));
+
+  for (byte i = 0; i < 6; i++) {
+    key.keyByte[i] = 0xFF;
+  }
+
+  MFRC522::StatusCode status;
+  for (int i = 0; i < 5; i++) { // Try 5 times
+    status = mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &key, &(mfrc522.uid));
+    if (status == MFRC522::STATUS_OK) {
+        break;
+    }
+    delay(500); // Increase delay between attempts
+  }
+  if (status != MFRC522::STATUS_OK) {
+    Serial.print(F("Authentication failed: "));
+    Serial.println(mfrc522.GetStatusCodeName(status));
+    digitalWrite(redPin, HIGH);
+    delay(1000);
+    digitalWrite(redPin, LOW);
+    return;
+  }
+
+  status = mfrc522.MIFARE_Write(block, buffer, 16);
+  if (status != MFRC522::STATUS_OK) {
+    Serial.print(F("Writing failed: "));
+    Serial.println(mfrc522.GetStatusCodeName(status));
+    digitalWrite(redPin, HIGH);
+    delay(1000);
+    digitalWrite(redPin, LOW);
+    return;
+  } else {
+    Serial.println(F("Writing data successful"));
+    digitalWrite(greenPin, HIGH);
+    delay(1000);
+    digitalWrite(greenPin, LOW);
+  }
 }
