@@ -63,3 +63,12 @@ tbody tr:nth-child(even) {
 #statusMessage.error {
     color: red;
 }
+
+h3 {
+    color: blue;
+    cursor: pointer;
+}
+
+h3:hover {
+    text-decoration: underline;
+}

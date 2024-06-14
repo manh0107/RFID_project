@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hệ thống quản lý điểm danh - Admin</title>
+    <link rel="stylesheet" type="text/css" href="stylesAdmin.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Hệ thống quản lý điểm danh - Admin</h1>
+        <button id="logoutButton">Đăng xuất</button>
+        <table id="dataTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Mã sinh viên</th>
+                    <th>Họ và tên</th>
+                    <th>Lớp</th>
+                    <th>Khóa</th>
+                    <th>Ngày điểm danh</th>
+                    <th>Thời gian vào</th>
+                    <th>Thời gian ra</th>
+                    <th>Hành động</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+
+        <p id="statusMessage"></p>
+    </div>
+
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Chỉnh sửa thông tin sinh viên</h2>
+            <form id="editForm">
+                <input type="hidden" id="editId">
+                <label for="editStudentId">Mã sinh viên:</label>
+                <input type="text" id="editStudentId" required><br><br>
+                <label for="editFullName">Họ và tên:</label>
+                <input type="text" id="editFullName" required><br><br>
+                <label for="editAge">Tuổi:</label>
+                <input type="number" id="editAge" required><br><br>
+                <label for="editClass">Lớp:</label>
+                <input type="text" id="editClass" required><br><br>
+                <label for="editCourse">Khóa:</label>
+                <input type="text" id="editCourse" required><br><br>
+                <label for="editGender">Giới tính:</label>
+                <input type="text" id="editGender" required><br><br>
+                <button type="submit">Cập nhật</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const dataTable = document.getElementById("dataTable").getElementsByTagName("tbody")[0];
+            const logoutButton = document.getElementById("logoutButton");
+            const statusMessage = document.getElementById("statusMessage");
+            const editModal = document.getElementById("editModal");
+            const closeModal = document.getElementsByClassName("close")[0];
+            const editForm = document.getElementById("editForm");
+
+            function fetchData() {
+                fetch('/api/attendance_records')
+                    .then(response => response.json())
+                    .then(data => {
+                        dataTable.innerHTML = "";
+                        data.forEach(record => {
+                            const row = dataTable.insertRow();
+                            row.insertCell(0).innerText = record.id;
+                            row.insertCell(1).innerText = record.student_id;
+                            row.insertCell(2).innerText = record.full_name;
+                            row.insertCell(3).innerText = record.class;
+                            row.insertCell(4).innerText = record.course;
+                            row.insertCell(5).innerText = record.date_attend;
+                            row.insertCell(6).innerText = record.time_in;
+                            row.insertCell(7).innerText = record.time_out;
+                            const actionsCell = row.insertCell(8);
+                            const editButton = document.createElement("button");
+                            editButton.innerText = "Chỉnh sửa";
+                            editButton.onclick = function() {
+                                openEditModal(record);
+                            };
+                            actionsCell.appendChild(editButton);
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Error fetching data: ', error);
+                    });
+            }
+
+            fetchData();
+
+            const socket = new WebSocket('ws://localhost:8080');
+            socket.onopen = function() {
+                console.log('WebSocket connection established');
+            };
+
+            socket.onmessage = function(event) {
+                const updatedRecord = JSON.parse(event.data);
+                const rows = dataTable.getElementsByTagName('tr');
+                for (let i = 0; i < rows.length; i++) {
+                    if (rows[i].cells[1].innerText == updatedRecord.student_id) {
+                        rows[i].cells[2].innerText = updatedRecord.full_name;
+                        rows[i].cells[3].innerText = updatedRecord.class;
+                        rows[i].cells[4].innerText = updatedRecord.course;
+                        rows[i].cells[5].innerText = updatedRecord.date_attend;
+                        rows[i].cells[6].innerText = updatedRecord.time_in;
+                        rows[i].cells[7].innerText = updatedRecord.time_out;
+                    }
+                }
+            };
+
+            socket.onclose = function() {
+                console.log('WebSocket connection closed');
+            };
+
+            function openEditModal(record) {
+                editModal.style.display = "block";
+                document.getElementById("editId").value = record.id;
+                document.getElementById("editStudentId").value = record.student_id;
+                document.getElementById("editFullName").value = record.full_name;
+                document.getElementById("editAge").value = record.age;
+                document.getElementById("editClass").value = record.class;
+                document.getElementById("editCourse").value = record.course;
+                document.getElementById("editGender").value = record.gender;
+            }
+
+            closeModal.onclick = function() {
+                editModal.style.display = "none";
+            };
+
+            window.onclick = function(event) {
+                if (event.target == editModal) {
+                    editModal.style.display = "none";
+                }
+            };
+
+            editForm.onsubmit = function(event) {
+                event.preventDefault();
+                const id = document.getElementById("editId").value;
+                const student_id = document.getElementById("editStudentId").value;
+                const full_name = document.getElementById("editFullName").value;
+                const age = document.getElementById("editAge").value;
+                const studentClass = document.getElementById("editClass").value;
+                const course = document.getElementById("editCourse").value;
+                const gender = document.getElementById("editGender").value;
+
+                fetch(`/api/update_record/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ student_id, full_name, age, class: studentClass, course, gender })
+                })
+                .then(response => response.json())
+                .then(updatedRecord => {
+                    statusMessage.innerText = "Thông tin đã được cập nhật thành công!";
+                    statusMessage.style.color = "green";
+                    editModal.style.display = "none";
+                    socket.send(JSON.stringify(updatedRecord));
+                })
+                .catch(error => {
+                    statusMessage.innerText = "Có lỗi xảy ra khi cập nhật thông tin!";
+                    statusMessage.style.color = "red";
+                    console.error('Error updating record: ', error);
+                });
+            };
+
+            logoutButton.onclick = function() {
+                window.location.href = "loginAdmin.html";
+            };
+        });
+    </script>
+</body>
+</html>

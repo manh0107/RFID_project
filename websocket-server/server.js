@@ -80,16 +80,33 @@ wss.on('connection', ws => {
     const fullName = 'Null'; // Replace with actual value or logic to get full name
     const studentClass = 'Null'; // Replace with actual value or logic to get class
     const course = 'Null'; // Replace with actual value or logic to get course
-    
+
     if (scanType === 'time_in') {
-      const insertQuery = `INSERT INTO attendance_records (student_id, full_name, class, course, date_attend, time_in) VALUES (?, ?, ?, ?, ?, ?)`;
-      db.query(insertQuery, [studentID, fullName, studentClass, course, dateAttend, timeAttend], err => {
+      const insertQuery = `INSERT INTO attendance_records (student_id, full_name, class, course, date_attend, time_in, time_out) VALUES (?, ?, ?, ?, ?, ?, '00:00:00')`;
+      db.query(insertQuery, [studentID, fullName, studentClass, course, dateAttend, timeAttend], (err, result) => {
         if (err) {
           console.error(`Error inserting time_in: `, err);
           ws.send(`Error inserting time_in`);
         } else {
           console.log(`time_in recorded: ${timeAttend}`);
           ws.send(`time_in recorded: ${timeAttend}`);
+
+          // Broadcast new record to all connected clients
+          const newRecord = {
+            id: result.insertId,
+            student_id: studentID,
+            full_name: fullName,
+            class: studentClass,
+            course: course,
+            date_attend: dateAttend,
+            time_in: timeAttend,
+            time_out: '00:00:00'
+          };
+          wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify(newRecord));
+            }
+          });
         }
       });
     } else if (scanType === 'time_out') {
@@ -119,6 +136,23 @@ wss.on('connection', ws => {
             } else {
               console.log(`time_out recorded: ${timeAttend}`);
               ws.send(`time_out recorded: ${timeAttend}`);
+
+              // Broadcast updated record to all connected clients
+              const updatedRecord = {
+                id: results[0].id,
+                student_id: studentID,
+                full_name: results[0].full_name,
+                class: results[0].class,
+                course: results[0].course,
+                date_attend: dateAttend,
+                time_in: results[0].time_in,
+                time_out: timeAttend
+              };
+              wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                  client.send(JSON.stringify(updatedRecord));
+                }
+              });
             }
           });
         }
