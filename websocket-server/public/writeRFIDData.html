@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Write RFID Data</title>
+    <style>
+        .container {
+            width: 50%;
+            margin: auto;
+            text-align: center;
+        }
+        .card-list {
+            list-style: none;
+            padding: 0;
+        }
+        .card-list li {
+            cursor: pointer;
+            padding: 10px;
+            border: 1px solid #000;
+            margin: 5px 0;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Write RFID Data</h1>
+        <ul class="card-list" id="cardList"></ul>
+        <div id="editForm" class="hidden">
+            <h2>Edit Card Info</h2>
+            <form id="cardForm">
+                <input type="hidden" id="card_uid">
+                <label for="student_id">Student ID:</label><br>
+                <input type="text" id="student_id"><br>
+                <label for="full_name">Full Name:</label><br>
+                <input type="text" id="full_name"><br>
+                <label for="age">Age:</label><br>
+                <input type="number" id="age"><br>
+                <label for="class">Class:</label><br>
+                <input type="text" id="class"><br>
+                <label for="course">Course:</label><br>
+                <input type="text" id="course"><br>
+                <label for="gender">Gender:</label><br>
+                <select id="gender">
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                </select><br><br>
+                <button type="button" onclick="saveCardInfo()">Save</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const socket = new WebSocket('ws://192.168.2.74:8080');
+
+        socket.onopen = function(event) {
+            console.log("WebSocket is open now.");
+            fetchCardList();
+        };
+
+        socket.onmessage = function(event) {
+            console.log("Received: " + event.data);
+            // Handle messages from the server if needed
+        };
+
+        socket.onclose = function(event) {
+            console.log("WebSocket is closed now.");
+        };
+
+        function fetchCardList() {
+            fetch('/api/card_list')
+                .then(response => response.json())
+                .then(data => {
+                    const cardList = document.getElementById('cardList');
+                    cardList.innerHTML = '';
+                    data.forEach(card => {
+                        const li = document.createElement('li');
+                        li.textContent = card.card_uid;
+                        li.onclick = () => editCard(card);
+                        cardList.appendChild(li);
+                    });
+                })
+                .catch(error => console.error('Error fetching card list:', error));
+        }
+
+        function editCard(card) {
+            document.getElementById('card_uid').value = card.card_uid;
+            document.getElementById('student_id').value = card.student_id || '';
+            document.getElementById('full_name').value = card.full_name || '';
+            document.getElementById('age').value = card.age || '';
+            document.getElementById('class').value = card.class || '';
+            document.getElementById('course').value = card.course || '';
+            document.getElementById('gender').value = card.gender || 'male';
+            document.getElementById('editForm').classList.remove('hidden');
+        }
+
+        function saveCardInfo() {
+            const card_uid = document.getElementById('card_uid').value;
+            const student_id = document.getElementById('student_id').value;
+            const full_name = document.getElementById('full_name').value;
+            const age = document.getElementById('age').value;
+            const class_name = document.getElementById('class').value;
+            const course = document.getElementById('course').value;
+            const gender = document.getElementById('gender').value;
+
+            const data = {
+                card_uid,
+                student_id,
+                full_name,
+                age,
+                class: class_name,
+                course,
+                gender
+            };
+
+            socket.send(JSON.stringify(data));
+            document.getElementById('editForm').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>

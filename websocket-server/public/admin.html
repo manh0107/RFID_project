@@ -7,6 +7,7 @@
 <body>
     <div class="container">
         <h1>Hệ thống quản lý điểm danh - Admin</h1>
+        <h3 id="writeLink" style="cursor: pointer; color: blue;">Write RFID data</h3>
         <button id="logoutButton">Đăng xuất</button>
         <table id="dataTable">
             <thead>
@@ -32,6 +33,10 @@
     </div>
 
     <script>
+        document.getElementById('writeLink').onclick = function() {
+            window.location.href = 'writeRFIDData.html';
+        };
+
         document.addEventListener("DOMContentLoaded", function() {
             const dataTable = document.getElementById("dataTable").getElementsByTagName("tbody")[0];
             const logoutButton = document.getElementById("logoutButton");

@@ -59,6 +59,28 @@ app.delete('/api/delete_record/:id', (req, res) => {
   });
 });
 
+app.get('/api/card_list', (req, res) => {
+  const query = `
+      SELECT t1.*
+      FROM attendance_records t1
+      INNER JOIN (
+          SELECT card_uid, MAX(id) AS max_id
+          FROM attendance_records
+          WHERE card_uid IS NOT NULL
+          GROUP BY card_uid
+      ) t2 ON t1.card_uid = t2.card_uid AND t1.id = t2.max_id
+  `;
+  db.query(query, (err, results) => {
+      if (err) {
+          console.error('Failed to retrieve data: ', err);
+          res.status(500).send('Failed to retrieve data');
+      } else {
+          res.json(results);
+      }
+  });
+});
+
+
 const server = app.listen(port, () => {
   console.log(`HTTP server running on port ${port}`);
   const networkInterfaces = os.networkInterfaces();

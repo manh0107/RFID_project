@@ -43,6 +43,7 @@ const unsigned long SCAN_INTERVAL = 1 * 2 * 60;
 
 bool isWritingData = false; // Variable to check if data is being written to the card
 String dataToWrite = ""; // Data to be written to the card
+bool stopCardReading = true; // Variable to stop reading card data initially
 
 void connectWebSocket() {
     webSocket.begin(ws_server, ws_port, "/");
@@ -63,12 +64,14 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
             Serial.printf("Received text: %s\n", payload);
             dataToWrite = String((char*)payload); // Store received data
             isWritingData = true; // Start the process to write data to the card
+            stopCardReading = false; // Allow card reading to start
             break;
         case WStype_BIN:
             Serial.printf("Received binary data\n");
             break;
     }
 }
+
 
 void setup() {
     Serial.begin(115200);
@@ -104,6 +107,12 @@ void loop() {
     webSocket.loop();
     timeClient.update();
 
+    if (stopCardReading) {
+        webSocket.sendTXT("stop_reading"); // Send message to stop reading cards
+        stopCardReading = false; // Ensure it sends only once
+        Serial.println("Sent stop_reading to WebSocket");
+    }
+
     if (isWritingData) {
         if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
             writeDataToCard();
@@ -112,26 +121,25 @@ void loop() {
             delay(1000);
             mfrc522.PCD_StopCrypto1();
         }
-        return;
-    }
+    } else {
+        if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+            unsigned long currentTime = timeClient.getEpochTime();
+            byte* uid = mfrc522.uid.uidByte;
 
-    if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
-        unsigned long currentTime = timeClient.getEpochTime();
-        byte* uid = mfrc522.uid.uidByte;
+            if (isCardAllowedToScan(uid, currentTime)) {
+                readingData();
+                updateCardLastScanTime(uid, currentTime);
+            } else {
+                Serial.println("Card scan interval limit. Try again later.");
+                digitalWrite(redPin, HIGH);
+                delay(1000);
+                digitalWrite(redPin, LOW);
+            }
 
-        if (isCardAllowedToScan(uid, currentTime)) {
-            readingData();
-            updateCardLastScanTime(uid, currentTime);
-        } else {
-            Serial.println("Card scan interval limit. Try again later.");
-            digitalWrite(redPin, HIGH);
+            mfrc522.PICC_HaltA();
             delay(1000);
-            digitalWrite(redPin, LOW);
+            mfrc522.PCD_StopCrypto1();
         }
-
-        mfrc522.PICC_HaltA();
-        delay(1000);
-        mfrc522.PCD_StopCrypto1();
     }
 }
 
