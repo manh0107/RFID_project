@@ -10,6 +10,7 @@
         
         <!-- Thêm thẻ h3 cho Admin -->
         <h3 id="adminLink" style="cursor: pointer; color: blue;">Admin</h3>
+        <h3 id="writeLink" style="cursor: pointer; color: blue;">Write RFID data</h3>
 
         <table id="dataTable">
             <thead>
@@ -35,6 +36,9 @@
         // Chuyển hướng đến trang admin.html khi nhấp vào thẻ h3
         document.getElementById('adminLink').onclick = function() {
             window.location.href = 'admin.html';
+        };
+        document.getElementById('writeLink').onclick = function() {
+            window.location.href = 'writingdatatocard.html';
         };
 
         function formatDate(dateString) {
@@ -85,15 +89,34 @@
             }
         }
 
-        // Fetch initial data
-        fetch('/api/attendance_records')
-            .then(response => response.json())
-            .then(data => {
-                data.slice(-10).forEach(record => {
-                    addRow(record);
-                });
-            })
-            .catch(error => console.error('Error fetching attendance records:', error));
+        function deleteRow(recordId) {
+            const rows = document.getElementById("dataTable").getElementsByTagName('tbody')[0].rows;
+            for (let i = 0; i < rows.length; i++) {
+                if (rows[i].dataset.recordId == recordId) {
+                    document.getElementById("dataTable").deleteRow(i);
+                    break;
+                }
+            }
+        }
+
+        function fetchLatestRecords() {
+            fetch('/api/attendance_records')
+                .then(response => response.json())
+                .then(data => {
+                    const table = document.getElementById("dataTable").getElementsByTagName('tbody')[0];
+                    table.innerHTML = ''; // Clear existing rows
+                    data.slice(-10).forEach(record => {
+                        addRow(record);
+                    });
+                })
+                .catch(error => console.error('Error fetching attendance records:', error));
+        }
+
+        // Initial fetch
+        fetchLatestRecords();
+
+        // Polling to refresh the table every 10 seconds
+        setInterval(fetchLatestRecords, 1000);
 
         // WebSocket connection
         const ws = new WebSocket('ws://192.168.2.74:8080/');
@@ -106,14 +129,18 @@
         ws.onmessage = function(event) {
             console.log("Received message: " + event.data);
             try {
-                const record = JSON.parse(event.data);
-                const existingRow = document.querySelector(`[data-record-id='${record.id}']`);
-                if (existingRow) {
-                    updateRow(record);
-                } else {
-                    addRow(record);
+                const message = JSON.parse(event.data);
+                if (message.action === 'add' || message.action === 'update') {
+                    const existingRow = document.querySelector(`[data-record-id='${message.record.id}']`);
+                    if (existingRow) {
+                        updateRow(message.record);
+                    } else {
+                        addRow(message.record);
+                    }
+                } else if (message.action === 'delete') {
+                    deleteRow(message.recordId);
                 }
-                document.getElementById("statusMessage").textContent = "Successfully scanned card";
+                document.getElementById("statusMessage").textContent = "Successfully processed update";
             } catch (e) {
                 console.error('Error parsing WebSocket message:', e);
             }

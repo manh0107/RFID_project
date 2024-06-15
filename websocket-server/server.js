@@ -39,34 +39,20 @@ app.get('/api/attendance_records', (req, res) => {
   });
 });
 
-app.put('/api/update_record/:id', (req, res) => {
+app.delete('/api/delete_record/:id', (req, res) => {
   const id = req.params.id;
-  const { student_id, full_name, age, class: studentClass, course, gender } = req.body;
-  const updateQuery = `
-    UPDATE attendance_records 
-    SET student_id = ?, full_name = ?, age = ?, class = ?, course = ?, gender = ?
-    WHERE id = ?
-  `;
-  db.query(updateQuery, [student_id, full_name, age, studentClass, course, gender, id], (err, result) => {
+  const deleteQuery = 'DELETE FROM attendance_records WHERE id = ?';
+  db.query(deleteQuery, [id], (err, result) => {
     if (err) {
-      console.error('Failed to update record: ', err);
-      res.status(500).send('Failed to update record');
+      console.error('Failed to delete record: ', err);
+      res.status(500).send({ success: false, message: 'Failed to delete record' });
     } else {
-      const updatedRecord = {
-        id,
-        student_id,
-        full_name,
-        age,
-        class: studentClass,
-        course,
-        gender
-      };
-      res.json(updatedRecord);
+      res.send({ success: true });
 
-      // Send updated record to all clients
+      // Send delete action to all clients
       wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify(updatedRecord));
+          client.send(JSON.stringify({ action: 'delete', id }));
         }
       });
     }
@@ -107,23 +93,31 @@ wss.on('connection', ws => {
       return;
     }
 
+    // Ensure the message follows the expected format: studentID;scanType;formattedTime
     const parts = messageStr.split(";");
     if (parts.length !== 3) {
       console.log(`Invalid message format: ${messageStr}`);
-      ws.send(JSON.stringify({ error: 'Invalid message format' }));
+      ws.send(JSON.stringify({ error: 'Invalid message format. Expected format: studentID;scanType;formattedTime' }));
       return;
     }
 
     const [studentID, scanType, formattedTime] = parts;
     const [datePart, timePart] = formattedTime.split(" ");
 
+    // Validate date and time parts
     if (!datePart || !timePart) {
       console.log(`Invalid date/time format: ${formattedTime}`);
-      ws.send(JSON.stringify({ error: 'Invalid date/time format' }));
+      ws.send(JSON.stringify({ error: 'Invalid date/time format. Expected format: DD-MM-YYYY HH:MM:SS' }));
       return;
     }
 
     const [day, month, year] = datePart.split("-");
+    if (!day || !month || !year) {
+      console.log(`Invalid date format: ${datePart}`);
+      ws.send(JSON.stringify({ error: 'Invalid date format. Expected format: DD-MM-YYYY' }));
+      return;
+    }
+
     const dateAttend = `${year}-${month}-${day}`;
     const timeAttend = timePart;
 
@@ -204,7 +198,7 @@ wss.on('connection', ws => {
       });
     } else {
       console.log(`Invalid scanType: ${scanType}`);
-      ws.send(JSON.stringify({ error: 'Invalid scanType' }));
+      ws.send(JSON.stringify({ error: 'Invalid scanType. Expected scanType: time_in or time_out' }));
     }
   });
 

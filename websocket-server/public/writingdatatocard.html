@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Write RFID Data</title>
+    <script>
+        var socket;
+
+        function connectWebSocket() {
+            socket = new WebSocket("ws://192.168.2.74:8080/");
+            socket.onopen = function(event) {
+                console.log("WebSocket is open now.");
+                fetchStudentIds(); // Fetch student IDs when WebSocket is open
+            };
+            socket.onclose = function(event) {
+                console.log("WebSocket is closed now.");
+            };
+            socket.onmessage = function(event) {
+                console.log("Received data from server: " + event.data);
+            };
+            socket.onerror = function(error) {
+                console.log("WebSocket error: " + error);
+            };
+        }
+
+        function fetchStudentIds() {
+            fetch('/api/attendance_records')
+                .then(response => response.json())
+                .then(data => displayStudentIds(data))
+                .catch(error => console.error('Error fetching student IDs:', error));
+        }
+
+        function displayStudentIds(records) {
+            var studentList = document.getElementById("student_list");
+            studentList.innerHTML = '';
+            var uniqueStudentIds = [...new Set(records.map(record => record.student_id))];
+
+            uniqueStudentIds.forEach(studentId => {
+                var listItem = document.createElement('li');
+                listItem.textContent = studentId;
+                listItem.onclick = () => populateForm(studentId, records);
+                studentList.appendChild(listItem);
+            });
+        }
+
+        function populateForm(studentId, records) {
+            var record = records.find(record => record.student_id === studentId);
+            if (record) {
+                document.getElementById("student_id").value = record.student_id;
+                document.getElementById("full_name").value = record.full_name;
+                document.getElementById("age").value = record.age;
+                document.getElementById("class").value = record.class;
+                document.getElementById("course").value = record.course;
+                document.getElementById("gender").value = record.gender;
+                document.getElementById("write_form").style.display = 'block';
+            }
+        }
+
+        function sendData() {
+            var studentId = document.getElementById("student_id").value;
+            var fullName = document.getElementById("full_name").value;
+            var age = document.getElementById("age").value;
+            var className = document.getElementById("class").value;
+            var course = document.getElementById("course").value;
+            var gender = document.getElementById("gender").value;
+
+            var data = studentId + ";" + fullName + ";" + age + ";" + className + ";" + course + ";" + gender;
+            
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(data);
+                console.log("Sent data to server: " + data);
+            } else {
+                console.log("WebSocket is not open. Try again later.");
+            }
+        }
+
+        window.onload = connectWebSocket;
+    </script>
+    <style>
+        #write_form {
+            display: none;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            cursor: pointer;
+            padding: 5px;
+            border: 1px solid #ddd;
+            margin: 5px 0;
+        }
+        li:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Write RFID Data</h1>
+    <h2>Scanned Student IDs</h2>
+    <ul id="student_list"></ul>
+    
+    <form id="write_form" onsubmit="sendData(); return false;">
+        <label for="student_id">Student ID:</label><br>
+        <input type="text" id="student_id" name="student_id" readonly><br>
+        <label for="full_name">Full Name:</label><br>
+        <input type="text" id="full_name" name="full_name"><br>
+        <label for="age">Age:</label><br>
+        <input type="text" id="age" name="age"><br>
+        <label for="class">Class:</label><br>
+        <input type="text" id="class" name="class"><br>
+        <label for="course">Course:</label><br>
+        <input type="text" id="course" name="course"><br>
+        <label for="gender">Gender:</label><br>
+        <input type="text" id="gender" name="gender"><br><br>
+        <input type="submit" value="Write Data to Card">
+    </form>
+</body>
+</html>

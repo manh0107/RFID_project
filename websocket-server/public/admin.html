@@ -31,37 +31,11 @@
         <p id="statusMessage"></p>
     </div>
 
-    <div id="editModal" class="modal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <h2>Chỉnh sửa thông tin sinh viên</h2>
-            <form id="editForm">
-                <input type="hidden" id="editId">
-                <label for="editStudentId">Mã sinh viên:</label>
-                <input type="text" id="editStudentId" required><br><br>
-                <label for="editFullName">Họ và tên:</label>
-                <input type="text" id="editFullName" required><br><br>
-                <label for="editAge">Tuổi:</label>
-                <input type="number" id="editAge" required><br><br>
-                <label for="editClass">Lớp:</label>
-                <input type="text" id="editClass" required><br><br>
-                <label for="editCourse">Khóa:</label>
-                <input type="text" id="editCourse" required><br><br>
-                <label for="editGender">Giới tính:</label>
-                <input type="text" id="editGender" required><br><br>
-                <button type="submit">Cập nhật</button>
-            </form>
-        </div>
-    </div>
-
     <script>
         document.addEventListener("DOMContentLoaded", function() {
             const dataTable = document.getElementById("dataTable").getElementsByTagName("tbody")[0];
             const logoutButton = document.getElementById("logoutButton");
             const statusMessage = document.getElementById("statusMessage");
-            const editModal = document.getElementById("editModal");
-            const closeModal = document.getElementsByClassName("close")[0];
-            const editForm = document.getElementById("editForm");
 
             function fetchData() {
                 fetch('/api/attendance_records')
@@ -81,12 +55,12 @@
                             row.insertCell(8).innerText = record.time_in;
                             row.insertCell(9).innerText = record.time_out;
                             const actionsCell = row.insertCell(10);
-                            const editButton = document.createElement("button");
-                            editButton.innerText = "Chỉnh sửa";
-                            editButton.onclick = function() {
-                                openEditModal(record);
+                            const deleteButton = document.createElement("button");
+                            deleteButton.innerText = "Xóa";
+                            deleteButton.onclick = function() {
+                                deleteRecord(record.id);
                             };
-                            actionsCell.appendChild(editButton);
+                            actionsCell.appendChild(deleteButton);
                         });
                     })
                     .catch(error => {
@@ -106,15 +80,9 @@
                     const updatedRecord = JSON.parse(event.data);
                     const rows = dataTable.getElementsByTagName('tr');
                     for (let i = 0; i < rows.length; i++) {
-                        if (rows[i].cells[1].innerText == updatedRecord.student_id) {
-                            rows[i].cells[2].innerText = updatedRecord.full_name;
-                            rows[i].cells[3].innerText = updatedRecord.age;
-                            rows[i].cells[4].innerText = updatedRecord.class;
-                            rows[i].cells[5].innerText = updatedRecord.course;
-                            rows[i].cells[6].innerText = updatedRecord.gender;
-                            rows[i].cells[7].innerText = updatedRecord.date_attend;
-                            rows[i].cells[8].innerText = updatedRecord.time_in;
-                            rows[i].cells[9].innerText = updatedRecord.time_out;
+                        if (rows[i].cells[0].innerText == updatedRecord.id) {
+                            dataTable.deleteRow(i);
+                            break;
                         }
                     }
                 } catch (error) {
@@ -126,57 +94,38 @@
                 console.log('WebSocket connection closed');
             };
 
-            function openEditModal(record) {
-                editModal.style.display = "block";
-                document.getElementById("editId").value = record.id;
-                document.getElementById("editStudentId").value = record.student_id;
-                document.getElementById("editFullName").value = record.full_name;
-                document.getElementById("editAge").value = record.age;
-                document.getElementById("editClass").value = record.class;
-                document.getElementById("editCourse").value = record.course;
-                document.getElementById("editGender").value = record.gender;
-            }
-
-            closeModal.onclick = function() {
-                editModal.style.display = "none";
-            };
-
-            window.onclick = function(event) {
-                if (event.target == editModal) {
-                    editModal.style.display = "none";
-                }
-            };
-
-            editForm.onsubmit = function(event) {
-                event.preventDefault();
-                const id = document.getElementById("editId").value;
-                const student_id = document.getElementById("editStudentId").value;
-                const full_name = document.getElementById("editFullName").value;
-                const age = document.getElementById("editAge").value;
-                const studentClass = document.getElementById("editClass").value;
-                const course = document.getElementById("editCourse").value;
-                const gender = document.getElementById("editGender").value;
-
-                fetch(`/api/update_record/${id}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ student_id, full_name, age, class: studentClass, course, gender })
+            function deleteRecord(id) {
+                fetch(`/api/delete_record/${id}`, {
+                    method: 'DELETE'
                 })
                 .then(response => response.json())
-                .then(updatedRecord => {
-                    statusMessage.innerText = "Thông tin đã được cập nhật thành công!";
-                    statusMessage.style.color = "green";
-                    editModal.style.display = "none";
-                    socket.send(JSON.stringify(updatedRecord));
+                .then(result => {
+                    if (result.success) {
+                        statusMessage.innerText = "Record deleted successfully!";
+                        statusMessage.style.color = "green";
+
+                        // Remove the row from the table
+                        const rows = dataTable.getElementsByTagName('tr');
+                        for (let i = 0; i < rows.length; i++) {
+                            if (rows[i].cells[0].innerText == id) {
+                                dataTable.deleteRow(i);
+                                break;
+                            }
+                        }
+
+                        // Notify WebSocket clients
+                        socket.send(JSON.stringify({ action: "delete", id }));
+                    } else {
+                        statusMessage.innerText = "Failed to delete record!";
+                        statusMessage.style.color = "red";
+                    }
                 })
                 .catch(error => {
-                    statusMessage.innerText = "Có lỗi xảy ra khi cập nhật thông tin!";
+                    statusMessage.innerText = "An error occurred while deleting the record!";
                     statusMessage.style.color = "red";
-                    console.error('Error updating record: ', error);
+                    console.error('Error deleting record: ', error);
                 });
-            };
+            }
 
             logoutButton.onclick = function() {
                 window.location.href = "loginAdmin.html";
