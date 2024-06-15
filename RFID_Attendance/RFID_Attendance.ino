@@ -237,8 +237,9 @@ void sendDataToWebSocket(byte *uid, String type) {
     for (int i = 0; i < 4; i++) {
         uidStr += String(uid[i], HEX);
     }
+    String studentID = "12345"; // Replace with actual student ID retrieval logic
     String currentTimeStr = getFormattedTime(timeClient.getEpochTime());
-    String message = uidStr + ";" + type + ";" + currentTimeStr;
+    String message = uidStr + ";" + studentID + ";" + type + ";" + currentTimeStr;
     Serial.print("Sending data to WebSocket: ");
     Serial.println(message);
     webSocket.sendTXT(message);

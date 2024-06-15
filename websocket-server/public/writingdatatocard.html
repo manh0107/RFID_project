@@ -16,6 +16,10 @@
             };
             socket.onmessage = function(event) {
                 console.log("Received data from server: " + event.data);
+                const data = JSON.parse(event.data);
+                if (data.card_uid) {
+                    displayCardData(data);
+                }
             };
             socket.onerror = function(error) {
                 console.log("WebSocket error: " + error);
@@ -42,6 +46,11 @@
             });
         }
 
+        function displayCardData(data) {
+            document.getElementById("card_uid").textContent = `Card UID: ${data.card_uid}`;
+            populateForm(data.student_id, [data]);
+        }
+
         function populateForm(studentId, records) {
             var record = records.find(record => record.student_id === studentId);
             if (record) {
@@ -55,16 +64,12 @@
             }
         }
 
-        function sendData() {
+        function sendData(scanType) {
+            var cardUID = document.getElementById("card_uid").textContent.replace('Card UID: ', '');
             var studentId = document.getElementById("student_id").value;
-            var fullName = document.getElementById("full_name").value;
-            var age = document.getElementById("age").value;
-            var className = document.getElementById("class").value;
-            var course = document.getElementById("course").value;
-            var gender = document.getElementById("gender").value;
+            var currentTime = new Date().toLocaleString('en-GB', { timeZone: 'UTC' }).replace(',', '');
+            var data = `${cardUID};${studentId};${scanType};${currentTime}`;
 
-            var data = studentId + ";" + fullName + ";" + age + ";" + className + ";" + course + ";" + gender;
-            
             if (socket.readyState === WebSocket.OPEN) {
                 socket.send(data);
                 console.log("Sent data to server: " + data);
@@ -98,8 +103,10 @@
     <h1>Write RFID Data</h1>
     <h2>Scanned Student IDs</h2>
     <ul id="student_list"></ul>
-    
-    <form id="write_form" onsubmit="sendData(); return false;">
+
+    <div id="card_uid"></div>
+
+    <form id="write_form" onsubmit="return false;">
         <label for="student_id">Student ID:</label><br>
         <input type="text" id="student_id" name="student_id" readonly><br>
         <label for="full_name">Full Name:</label><br>
@@ -112,7 +119,8 @@
         <input type="text" id="course" name="course"><br>
         <label for="gender">Gender:</label><br>
         <input type="text" id="gender" name="gender"><br><br>
-        <input type="submit" value="Write Data to Card">
+        <button onclick="sendData('time_in')">Send Time In</button>
+        <button onclick="sendData('time_out')">Send Time Out</button>
     </form>
 </body>
 </html>

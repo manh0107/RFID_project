@@ -93,15 +93,15 @@ wss.on('connection', ws => {
       return;
     }
 
-    // Ensure the message follows the expected format: studentID;scanType;formattedTime
+    // Ensure the message follows the expected format: cardUID;studentID;scanType;formattedTime
     const parts = messageStr.split(";");
-    if (parts.length !== 3) {
+    if (parts.length !== 4) {
       console.log(`Invalid message format: ${messageStr}`);
-      ws.send(JSON.stringify({ error: 'Invalid message format. Expected format: studentID;scanType;formattedTime' }));
+      ws.send(JSON.stringify({ error: 'Invalid message format. Expected format: cardUID;studentID;scanType;formattedTime' }));
       return;
     }
 
-    const [studentID, scanType, formattedTime] = parts;
+    const [cardUID, studentID, scanType, formattedTime] = parts;
     const [datePart, timePart] = formattedTime.split(" ");
 
     // Validate date and time parts
@@ -126,8 +126,8 @@ wss.on('connection', ws => {
     const course = 'Null';
 
     if (scanType === 'time_in') {
-      const insertQuery = `INSERT INTO attendance_records (student_id, full_name, class, course, date_attend, time_in, time_out) VALUES (?, ?, ?, ?, ?, ?, '00:00:00')`;
-      db.query(insertQuery, [studentID, fullName, studentClass, course, dateAttend, timeAttend], (err, result) => {
+      const insertQuery = `INSERT INTO attendance_records (student_id, full_name, class, course, date_attend, time_in, time_out, card_uid) VALUES (?, ?, ?, ?, ?, ?, '00:00:00', ?)`;
+      db.query(insertQuery, [studentID, fullName, studentClass, course, dateAttend, timeAttend, cardUID], (err, result) => {
         if (err) {
           console.error(`Error inserting time_in: `, err);
           ws.send(JSON.stringify({ error: 'Error inserting time_in' }));
@@ -143,7 +143,8 @@ wss.on('connection', ws => {
             course: course,
             date_attend: dateAttend,
             time_in: timeAttend,
-            time_out: '00:00:00'
+            time_out: '00:00:00',
+            card_uid: cardUID  // Include cardUID in the record
           };
           wss.clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) {
@@ -168,8 +169,8 @@ wss.on('connection', ws => {
           console.log(`No matching record found for time_out: student_id=${studentID}`);
           ws.send(JSON.stringify({ error: `No matching record found for time_out: student_id=${studentID}` }));
         } else {
-          const updateQuery = `UPDATE attendance_records SET time_out = ? WHERE id = ?`;
-          db.query(updateQuery, [timeAttend, results[0].id], err => {
+          const updateQuery = `UPDATE attendance_records SET time_out = ?, card_uid = ? WHERE id = ?`;
+          db.query(updateQuery, [timeAttend, cardUID, results[0].id], err => {
             if (err) {
               console.error(`Error updating time_out: `, err);
               ws.send(JSON.stringify({ error: 'Error updating time_out' }));
@@ -185,7 +186,8 @@ wss.on('connection', ws => {
                 course: results[0].course,
                 date_attend: dateAttend,
                 time_in: results[0].time_in,
-                time_out: timeAttend
+                time_out: timeAttend,
+                card_uid: cardUID  // Include cardUID in the record
               };
               wss.clients.forEach(client => {
                 if (client.readyState === WebSocket.OPEN) {
