@@ -115,8 +115,22 @@
                 gender
             };
 
-            socket.send(JSON.stringify(data));
-            document.getElementById('editForm').classList.add('hidden');
+            fetch('/api/save_card', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(responseData => {
+                if (responseData.success) {
+                    console.log('Card info sent successfully');
+                } else {
+                    console.error('Failed to send card info');
+                }
+            })
+            .catch(error => console.error('Error sending card info:', error));
         }
     </script>
 </body>

@@ -64,14 +64,12 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
             Serial.printf("Received text: %s\n", payload);
             dataToWrite = String((char*)payload); // Store received data
             isWritingData = true; // Start the process to write data to the card
-            stopCardReading = false; // Allow card reading to start
             break;
         case WStype_BIN:
             Serial.printf("Received binary data\n");
             break;
     }
 }
-
 
 void setup() {
     Serial.begin(115200);
@@ -250,13 +248,13 @@ void sendDataToWebSocket(byte *uid, String type) {
     String message = uidStr + ";" + studentID + ";" + type + ";" + currentTimeStr;
     Serial.print("Sending data to WebSocket: ");
     Serial.println(message);
+
     webSocket.sendTXT(message);
 }
 
 void writeDataToCard() {
     byte block = 1;
-    byte buffer[18];
-    dataToWrite.getBytes(buffer, sizeof(buffer));
+    byte size = 18;
 
     for (byte i = 0; i < 6; i++) {
         key.keyByte[i] = 0xFF;
@@ -279,16 +277,18 @@ void writeDataToCard() {
         return;
     }
 
-    status = mfrc522.MIFARE_Write(block, buffer, 16);
+    byte data[18];
+    dataToWrite.getBytes(data, 18);
+    status = mfrc522.MIFARE_Write(block, data, size);
     if (status != MFRC522::STATUS_OK) {
-        Serial.print(F("Writing failed: "));
+        Serial.print(F("Write failed: "));
         Serial.println(mfrc522.GetStatusCodeName(status));
         digitalWrite(redPin, HIGH);
         delay(1000);
         digitalWrite(redPin, LOW);
         return;
     } else {
-        Serial.println(F("Writing data successful"));
+        Serial.println(F("Data written successfully"));
         digitalWrite(greenPin, HIGH);
         delay(1000);
         digitalWrite(greenPin, LOW);

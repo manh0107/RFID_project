@@ -80,6 +80,20 @@ app.get('/api/card_list', (req, res) => {
   });
 });
 
+app.post('/api/save_card', (req, res) => {
+  const { card_uid, student_id, full_name, age, class: studentClass, course, gender } = req.body;
+
+  // Send new card info to all clients
+  const formattedMessage = `${card_uid};${student_id};${full_name};${age};${studentClass};${course};${gender}`;
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(formattedMessage);
+    }
+  });
+
+  // Respond to the client
+  res.send({ success: true });
+});
 
 const server = app.listen(port, () => {
   console.log(`HTTP server running on port ${port}`);
@@ -94,6 +108,32 @@ const server = app.listen(port, () => {
 });
 
 const wss = new WebSocket.Server({ server });
+
+wss.on('connection', ws => {
+  console.log('Client connected');
+
+  ws.on('message', message => {
+    try {
+      const data = JSON.parse(message);
+      const { card_uid, student_id, full_name, age, class: studentClass, course, gender } = data;
+
+      // Format the message to be sent to the ESP32
+      const formattedMessage = `${card_uid};${student_id};${full_name};${age};${studentClass};${course};${gender}`;
+      
+      console.log(`Forwarding message to ESP32: ${formattedMessage}`);
+
+      // Forward the message to the ESP32
+      ws.send(formattedMessage);
+    } catch (err) {
+      console.error('Failed to parse message: ', err);
+      ws.send(JSON.stringify({ error: 'Failed to parse message' }));
+    }
+  });
+
+  ws.on('close', () => {
+    console.log('Client disconnected');
+  });
+});
 
 wss.on('connection', ws => {
   console.log('Client connected');
