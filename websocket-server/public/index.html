@@ -115,7 +115,7 @@
         setInterval(fetchLatestRecords, 1000);
 
         // WebSocket connection
-        const ws = new WebSocket('ws://192.168.2.74:8080/');
+        const ws = new WebSocket('ws://192.168.100.201:8080/');
 
         ws.onopen = function() {
             console.log("WebSocket connected");

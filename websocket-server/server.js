@@ -113,49 +113,26 @@ wss.on('connection', ws => {
   console.log('Client connected');
 
   ws.on('message', message => {
+    const messageStr = message.toString();
+    console.log('Received: %s', messageStr);
+
+    // Try to parse message as JSON first
     try {
-      const data = JSON.parse(message);
+      const data = JSON.parse(messageStr);
+      // Process JSON message
       const { card_uid, student_id, full_name, age, class: studentClass, course, gender } = data;
 
       // Format the message to be sent to the ESP32
       const formattedMessage = `${card_uid};${student_id};${full_name};${age};${studentClass};${course};${gender}`;
       
       console.log(`Forwarding message to ESP32: ${formattedMessage}`);
-
-      // Forward the message to the ESP32
       ws.send(formattedMessage);
-    } catch (err) {
-      console.error('Failed to parse message: ', err);
-      ws.send(JSON.stringify({ error: 'Failed to parse message' }));
-    }
-  });
-
-  ws.on('close', () => {
-    console.log('Client disconnected');
-  });
-});
-
-wss.on('connection', ws => {
-  console.log('Client connected');
-
-  ws.on('message', message => {
-    const messageStr = message.toString();
-    console.log('Received: %s', messageStr);
-
-    if (messageStr === 'request_data') {
-      const query = 'SELECT * FROM attendance_records';
-      db.query(query, (err, results) => {
-        if (err) {
-          console.error('Failed to retrieve data: ', err);
-          ws.send(JSON.stringify({ error: 'Failed to retrieve data' }));
-        } else {
-          ws.send(JSON.stringify(results));
-        }
-      });
       return;
+    } catch (err) {
+      console.log('Message is not JSON, treating it as custom format');
     }
 
-    // Ensure the message follows the expected format: cardUID;studentID;scanType;formattedTime
+    // Handle custom format: cardUID;studentID;scanType;formattedTime
     const parts = messageStr.split(";");
     if (parts.length !== 4) {
       console.log(`Invalid message format: ${messageStr}`);
@@ -270,3 +247,4 @@ wss.on('connection', ws => {
     console.log('Client disconnected');
   });
 });
+
